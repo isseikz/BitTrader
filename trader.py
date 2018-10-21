@@ -10,9 +10,13 @@ import threading
 
 from estimaters import sd_method
 
+import numpy as np
+import time as time
+
 # Global variables: start
-histId = 0
 tradeInfo = {'isExist': False, 'price': 0.0, 'buy': False}
+snapshot  = np.zeros((600,2),float)
+lastExecPrice = 0.0
 # Global variables: end
 
 def appendData(time, bestAsk, bestBid):
@@ -27,27 +31,27 @@ def on_message_ticker_fx(ws, message):
     global histId
     global tradeInfo
 
-    print("Ticker")
+    # print("Ticker")
 
-    # ticker = json.loads(message)
-    # rpc = ticker['jsonrpc']
-    # mtd = ticker['method']
-    # msg = ticker['params']['message']
-    # timestamp = msg['timestamp']
-    # tickId = msg['tick_id']
-    # bestBid = msg['best_bid']
-    # besdBidSize = msg['best_bid_size']
-    # bestAsk = msg['best_ask']
-    # bestAskSize = msg['best_ask_size']
-    # totalBidDepth = msg['total_bid_depth']
-    # totalAskDepth = msg['total_ask_depth']
-    # ltp = msg['ltp']
-    # volume = msg['volume']
-    # volumeByProduct = msg['volume_by_product']
-    # tickTime = dateutil.parser.parse(timestamp)
-    # spread = int(bestAsk) - int(bestBid)
-    # # appendData(tickTime, int(bestAsk), int(bestBid))
-    # # print(history[len(history)-1])
+    ticker = json.loads(message)
+    rpc = ticker['jsonrpc']
+    mtd = ticker['method']
+    msg = ticker['params']['message']
+    timestamp = msg['timestamp']
+    tickId = msg['tick_id']
+    bestBid = msg['best_bid']
+    besdBidSize = msg['best_bid_size']
+    bestAsk = msg['best_ask']
+    bestAskSize = msg['best_ask_size']
+    totalBidDepth = msg['total_bid_depth']
+    totalAskDepth = msg['total_ask_depth']
+    ltp = msg['ltp']
+    volume = msg['volume']
+    volumeByProduct = msg['volume_by_product']
+    tickTime = dateutil.parser.parse(timestamp)
+    spread = int(bestAsk) - int(bestBid)
+    # appendData(tickTime, int(bestAsk), int(bestBid))
+    # print(history[len(history)-1])
     # print(f'timestamp: {tickTime}, best bid: {bestBid}, best ask: {bestAsk}, spread: {spread}')
     # # print(len(history))
     #
@@ -68,7 +72,7 @@ def on_message_ticker_fx(ws, message):
     #     # ax.set_xlim((x.min(), x.max()))
     #     plt.pause(.0001)
 
-def on_message_board(ws, message):
+def on_message_board(ws, msg):
     # example of the message
     # {
     # 'jsonrpc': '2.0',
@@ -102,12 +106,44 @@ def on_message_board(ws, message):
     #     }
     # }}
 
-    print("Board")
+    # print("Board")
+    #
+    global snapshot, midPrice
 
-    rcv = json.loads(message)
-    # print(rcv)
+    rcv = json.loads(msg)
+    jsonrpc = rcv['jsonrpc']
+    method  = rcv['method']
+    params  = rcv['params']
+    channel = params['channel']
+    message = params['message']
+    midPrice = message['mid_price']
+    bids     = message['bids']
+    asks     = message['asks']
+    # print(bids)
+    # print(asks)
 
-def on_message_board_snapshot(ws, message):
+    for i, bid in enumerate(bids):
+        price = bid['price']
+        size = bid['size']
+
+        for j, board in enumerate(snapshot):
+            if board[0] == price:
+                snapshot[j,1] = size
+
+    for i, ask in enumerate(asks):
+        price = ask['price']
+        size = ask['size']
+
+        for j, board in enumerate(snapshot):
+            if board[0] == price:
+                snapshot[j,1] = size
+
+    # for board in snapshot:
+    #     print(f'{board[0]:.1f}: {board[1]:.3f}')
+
+    # print(len(snapshot))
+
+def on_message_board_snapshot(ws, msg):
     # example of the message
     # {
     # 'jsonrpc': '2.0',
@@ -135,10 +171,76 @@ def on_message_board_snapshot(ws, message):
     #     }
     # }
 
-    print("Snapshot")
+    global snapshot
 
-    rcv = json.loads(message)
-    # print(rcv)
+    rcv = json.loads(msg)
+    jsonrpc = rcv['jsonrpc']
+    method  = rcv['method']
+    params  = rcv['params']
+    channel = params['channel']
+    message = params['message']
+    midPrice = message['mid_price']
+    bids     = message['bids']
+    asks     = message['asks']
+
+    bidSize = len(bids)
+    askSize = len(asks)
+    snapshot = np.empty((bidSize+askSize, 2), float)
+    for i, bid in enumerate(bids):
+        snapshot[i,0] = bid['price']
+        snapshot[i,1] = bid['size']
+
+    for i, ask in enumerate(asks):
+        snapshot[bidSize + i, 0] = ask['price']
+        snapshot[bidSize + i, 1] = ask['size']
+
+    # print(snapshot)
+
+    # print(len(bids)+len(asks))
+
+    # print("Snapshot")
+    # print(bids)
+    # print(asks)
+
+def on_message_executions_fx(ws,msg):
+    # example of the message
+    # {
+    # "jsonrpc":"2.0",
+    # "method":"channelMessage",
+    # "params":
+    # {
+    #     "channel":"lightning_executions_FX_BTC_JPY",
+    #     "message":
+    #     [{
+    #         "id":509130030,
+    #         "side":"BUY",
+    #         "price":743019,
+    #         "size":0.0829522,
+    #         "exec_date":"2018-10-18T13:51:24.7550203Z",
+    #         "buy_child_order_acceptance_id":"JRF20181018-135124-897903",
+    #         "sell_child_order_acceptance_id":"JRF20181018-135124-010493"
+    #     }]
+    # }}
+
+    global lastExecPrice
+
+    rcv = json.loads(msg)
+    jsonrpc = rcv['jsonrpc']
+    method  = rcv['method']
+    params  = rcv['params']
+    channel = params['channel']
+    message = params['message'][0]
+    id = message['id']
+    side = message['side']
+    price = message['price']
+    size = message['size']
+    execDate = message['exec_date']
+    buyChildOrderAcceptanceId = message['buy_child_order_acceptance_id']
+    sellChildOrderAcceptanceId = message['sell_child_order_acceptance_id']
+
+    lastExecPrice = price
+    # print(f'execution: {lastExecPrice}')
+
 
 def on_error(ws, error):
     print(error)
@@ -154,6 +256,9 @@ def on_open_board_snapshot(ws):
 
 def on_open_board(ws):
     ws.send(json.dumps({"method": "subscribe", "params": {"channel": "lightning_board_FX_BTC_JPY"}}))
+
+def on_open_executions_fx(ws):
+    ws.send(json.dumps({"method":"subscribe", "params": {"channel": "lightning_executions_FX_BTC_JPY"}}))
 
 class WebSocketSnapshot(threading.Thread):
     """docstring for WebSocketTicker."""
@@ -188,14 +293,67 @@ class WebSocketTicker(threading.Thread):
         ws.on_open = on_open_ticker_fx
         ws.run_forever()
 
+class WebSocketExecution(threading.Thread):
+    """docstring for WebSocketExecution."""
+    def run(self):
+        websocket.enableTrace(True)
+        ws = websocket.WebSocketApp("wss://ws.lightstream.bitflyer.com/json-rpc",
+                                on_message = on_message_executions_fx,
+                                on_error = on_error,
+                                on_close = on_close)
+
+        ws.on_open = on_open_executions_fx
+        ws.run_forever()
+
+class InfoUpdator(threading.Thread):
+    def run(self):
+        print(lastExecPrice)
+        getDominant()
+        time.sleep(1)
+        InfoUpdator().start()
+
+def getDominant():
+    # Demerit: orders with large size influence well
+    global lastExecPrice
+    global snapshot
+
+    dominant = 0
+    for board in snapshot:
+        if board[0] > lastExecPrice: # bid
+            dominant += board[0]/lastExecPrice * board[1]
+        elif board[0] < lastExecPrice:
+            dominant -= board[0]/lastExecPrice * board[1]
+        else:
+            pass
+    print(dominant)
+
+def getDominant2():
+    global lastExecPrice
+    global snapshot
+
+    dominant = 0
+    for board in snapshot:
+        if board[0] > lastExecPrice: # bid
+            dominant += board[0]/lastExecPrice
+        elif board[0] < lastExecPrice:
+            dominant -= board[0]/lastExecPrice
+        else:
+            pass
+    print(dominant)
+
+def removedOutValueOf(snapshot):
+    # attention: assuming the deviation of order size as normal
+    avgOrderSize = mean(snapshot(:,1))
+    stdOrderSize = stdev(snapshot(:,1))
+    removedLarger = snapshot.any(snapshot[:,1] < avgOrderSize)
+    return removedLarger
+
+
+
+
 if __name__ == "__main__":
     histSize = 100
     history = []
-
-    fig, ax = plt.subplots(1,1)
-    x= []
-    y1 = []
-    y2 = []
 
     ws0 = WebSocketTicker()
     ws0.start()
@@ -205,3 +363,15 @@ if __name__ == "__main__":
 
     ws2 = WebSocketBoard()
     ws2.start()
+
+    ws3 = WebSocketExecution()
+    ws3.start()
+
+    th0 = InfoUpdator()
+    th0.start()
+
+    while True:
+        plt.clf()
+        plt.bar(snapshot[:,0], snapshot[:,1],width=2.0,log=True)
+        # plt.plot([lastExecPrice,5],5)
+        plt.pause(.1)
