@@ -1,5 +1,8 @@
+import pkg_resources
+
 import websocket
 import json
+from pytz import timezone
 from datetime import datetime as dt
 from datetime import timedelta as td
 from datetime import timezone as tz
@@ -13,7 +16,11 @@ from estimaters import sd_method
 import numpy as np
 import time as time
 
+import csv, os
+
 # Global variables: start
+db_name_snapshot = "db_snapshot.db"
+
 tradeInfo = {'isExist': False, 'price': 0.0, 'buy': False}
 snapshot  = np.zeros((600,2),float)
 lastExecPrice = 0.0
@@ -122,9 +129,13 @@ def on_message_board(ws, msg):
     # print(bids)
     # print(asks)
 
+    diffList = np.ndarray([len(bids)+len(asks), 2])
+
     for i, bid in enumerate(bids):
         price = bid['price']
         size = bid['size']
+
+        diffList[i,:] = [price, size]
 
         for j, board in enumerate(snapshot):
             if board[0] == price:
@@ -134,9 +145,14 @@ def on_message_board(ws, msg):
         price = ask['price']
         size = ask['size']
 
+        diffList[i + len(bids),:] = [price, size]
+
         for j, board in enumerate(snapshot):
             if board[0] == price:
                 snapshot[j,1] = size
+
+    outputSSDiff(diffList)
+
 
     # for board in snapshot:
     #     print(f'{board[0]:.1f}: {board[1]:.3f}')
@@ -194,6 +210,8 @@ def on_message_board_snapshot(ws, msg):
         snapshot[bidSize + i, 0] = ask['price']
         snapshot[bidSize + i, 1] = ask['size']
 
+    outputSS(snapshot)
+
     # print(snapshot)
 
     # print(len(bids)+len(asks))
@@ -239,7 +257,10 @@ def on_message_executions_fx(ws,msg):
     sellChildOrderAcceptanceId = message['sell_child_order_acceptance_id']
 
     lastExecPrice = price
-    # print(f'execution: {lastExecPrice}')
+
+    info = [id, side, price, size]
+    outputExecutionLog(info)
+    print(f'execution: {lastExecPrice}')
 
 
 def on_error(ws, error):
@@ -341,37 +362,68 @@ def getDominant2():
             pass
     print(dominant)
 
-def removedOutValueOf(snapshot):
+# def removedOutValueOf(snapshot):
     # attention: assuming the deviation of order size as normal
-    avgOrderSize = mean(snapshot(:,1))
-    stdOrderSize = stdev(snapshot(:,1))
-    removedLarger = snapshot.any(snapshot[:,1] < avgOrderSize)
-    return removedLarger
+    # avgOrderSize = mean(snapshot(:,1))
+    # stdOrderSize = stdev(snapshot(:,1))
+    # removedLarger = snapshot.any(snapshot[:,1] < avgOrderSize)
+    # return removedLarger
+
+def outputSS(snapshot):
+    """Output snapshot to a CSV file"""
+    os.makedirs('./log/snapshot/', exist_ok=True)
+    now = dt.now(timezone('UTC'))
+    filename = './log/snapshot/' + now.strftime('%Y%m%d%H%M%S%f') + '.csv'
+    with open(filename, 'w') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerows(snapshot)
+        f.close()
+
+def outputSSDiff(diff):
+    os.makedirs('./log/ssdiff/', exist_ok=True)
+    now = dt.now(timezone('UTC'))
+    filename = './log/ssdiff/' + now.strftime('%Y%m%d%H%M%S%f') + '.csv'
+    with open(filename, 'w') as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerows(diff)
+        f.close()
+
+def outputExecutionLog(info):
+    os.makedirs('./log/executions/', exist_ok=True)
+    now = dt.now(timezone('UTC'))
+    timestamp = now.strftime('%Y%m%d%H%M%S%f')
+    fn_timestamp = now.strftime('%Y%m%d')
+    filename = './log/executions/'+fn_timestamp+'.csv'
+    with open(filename, 'a') as f:
+        info.insert(0,timestamp)
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerow(info)
+        f.close()
 
 
 
 
 if __name__ == "__main__":
-    histSize = 100
-    history = []
+    for dist in pkg_resources.working_set:
+        print(dist.project_name, dist.version)
 
-    ws0 = WebSocketTicker()
-    ws0.start()
-
+    # ws0 = WebSocketTicker()
+    # ws0.start()
+    #
     ws1 = WebSocketSnapshot()
     ws1.start()
-
+    #
     ws2 = WebSocketBoard()
     ws2.start()
-
+    #
     ws3 = WebSocketExecution()
     ws3.start()
-
-    th0 = InfoUpdator()
-    th0.start()
-
-    while True:
-        plt.clf()
-        plt.bar(snapshot[:,0], snapshot[:,1],width=2.0,log=True)
-        # plt.plot([lastExecPrice,5],5)
-        plt.pause(.1)
+    #
+    # th0 = InfoUpdator()
+    # th0.start()
+    #
+    # while True:
+    #     plt.clf()
+    #     plt.bar(snapshot[:,0], snapshot[:,1],width=2.0,log=True)
+    #     # plt.plot([lastExecPrice,5],5)
+    #     plt.pause(.1)
