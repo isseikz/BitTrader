@@ -401,8 +401,6 @@ def outputExecutionLog(info):
         f.close()
 
 
-
-
 if __name__ == "__main__":
     for dist in pkg_resources.working_set:
         print(dist.project_name, dist.version)
