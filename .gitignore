@@ -2,3 +2,4 @@ API.txt
 error_log/
 log/
 model/*
+__pychache__
