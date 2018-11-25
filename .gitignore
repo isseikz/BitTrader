@@ -3,3 +3,5 @@ error_log/
 log/
 model/*
 __pycache__
+__pycache__/*
+anim.mp4
