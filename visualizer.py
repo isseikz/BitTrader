@@ -10,6 +10,9 @@ import re
 from statistics import mean, median, variance, stdev
 import matplotlib.animation as animation
 
+import myErrors
+from myUtils import CSVListIn
+
 def bars3d_demo(arg):
     fig = plt.figure()
     ax  = fig.add_subplot(111, projection='3d')
@@ -51,11 +54,6 @@ def getSnapshotsSize():
     csvList = CSVListIn('./log/snapshot')
     return len(csvList)
 
-
-def CSVListIn(dir_path):
-    files = [path for path in os.listdir(dir_path) if path.endswith('.csv')]
-    return files
-
 def getSnapshotsBetween(first, final):
     csvList = CSVListIn('./log/snapshot')
 
@@ -64,6 +62,7 @@ def getSnapshotsBetween(first, final):
     for i, fn in enumerate(filenames):
         path = './log/snapshot/' + fn
         snapshots[i] = pd.read_csv(path, header=None).values
+        # print(snapshots[i,:])
 
     return snapshots
 
@@ -137,6 +136,26 @@ def change0within(x,min,max):
         y = x
     return y
 
+def sortSnapshots(snapshots):
+    """ 気配値表をaskbidの降順に並べ替える"""
+    s = snapshots.shape
+    # TODO: 全ての値から現在のmidpriceで減じる
+    # print(s)
+
+    snapshots_sorted = np.zeros(s)
+    snapshots_des    = np.zeros(s)
+    for i in range(0,s[0]):
+        arg = np.argsort(snapshots[i,:,0])
+        snapshots_des[i,:,:] = snapshots[i,arg[-1::-1],:]
+
+    # snapshots_bak = snapshots
+    # snapshots_sorted[:, 0      :s[1]//2, :] = snapshots_des[:, 0:s[1]//2, :]
+    # snapshots_sorted[:, s[1]//2:s[1]   , :] = snapshots_bak[:, 0:s[1]//2, :]
+    snapshots_sorted = snapshots_des
+    myErrors.checkSnapshotOrder(snapshots_sorted)
+    return snapshots_sorted, s
+
+
 # 気配値の曲面をグレースケールの画像に変換する
 ## 現在の気配値の最大を基準価格として，基準価格以上の価格を切り捨て
 def snapshots2Gray(snapshots):
@@ -166,7 +185,7 @@ def snapshots2Gray(snapshots):
 
     # TODO: [-0.5,0.5]外の価格は+-0.5とする
     reshaped = snapshots
-    # reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
+    reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
     # print(reshaped)
 
     # TODO: 全ての値を0.5加算する
@@ -209,7 +228,6 @@ def snapshots2Gray(snapshots):
     # histSequence[:,n-1] = np.frompyfunc(reshape, 3, 1)(histSequence[:,n-1],0.0,1.0)
     # print(histSequence.T)
     return histSequence.T
-
 
 # 気配値の曲面をグレースケールの画像に変換する
 ## 最新の気配値の標準偏差を基準価格として，1σ以上の値を切り捨て
@@ -233,7 +251,7 @@ def snapshots2Gray2(snapshots):
 
     # TODO: [-0.5,0.5]外の価格は+-0.5とする
     reshaped = snapshots
-    # reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
+    reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
     # print(reshaped)
 
     # TODO: 全ての値を0.5加算する
@@ -278,7 +296,7 @@ def snapshots2Gray2(snapshots):
     return histSequence.T
 
 # 気配値の曲面をグレースケールの画像に変換する
-## 最新の気配値の標準偏差を基準価格として，1σ以上の値を切り捨て
+## 最新の気配値の標準偏差を基準価格と
 def snapshots2Gray3(snapshots):
     s = snapshots.shape
     # TODO: 全ての値から現在のmidpriceで減じる
@@ -307,7 +325,7 @@ def snapshots2Gray3(snapshots):
     snapshots[:,:,0] /= (refPrice * 2)
     # print(snapshots)
 
-    # TODO: [-0.5,0.5]外の価格は+-0.5とする
+
     reshaped = snapshots
     # reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
     # print(reshaped)
@@ -364,29 +382,26 @@ def snapshots2Gray3(snapshots):
     return histSequence.T
 
 # 気配値の曲面をグレースケールの画像に変換する
-## 現在の気配値の最大を基準価格として，基準価格以上の価格を切り捨て
+## 現在の気配値の標準偏差を基準価格として，2σ以上の価格を切り捨て
 def snapshots2Gray4(snapshots):
-    s = snapshots.shape
-    # TODO: 全ての値から現在のmidpriceで減じる
-    # print(s)
-    currentBestBid = snapshots[s[0]-1,s[1]//2-1,0]
-    currentBestAsk = snapshots[s[0]-1,s[1]//2,0]
+    snapshots, s = sortSnapshots(snapshots)
+
+    currentBestBid = snapshots[s[0]-1,s[1]//2,0]
+    currentBestAsk = snapshots[s[0]-1,s[1]//2+1,0]
     currentMidPrice = (currentBestBid + currentBestAsk )/2
     snapshots[:,:,0] -= currentMidPrice
     # print(snapshots)
 
     # TODO: 現在の気配値の標準偏差を基準価格とする
-    print(snapshots[s[0]-1,:,0])
     refPrice = stdev(snapshots[s[0]-1,:,0])
 
     # TODO: 全ての値を基準価格*2で割る．
     snapshots[:,:,0] /= (refPrice * 2)
     # print(snapshots)
 
-    # TODO: [-0.5,0.5]外の価格は+-0.5とする
+
     reshaped = snapshots
     # reshaped[:,:,0] = np.frompyfunc(reshape, 3, 1)(snapshots[:,:,0],-0.5,0.5)
-    # print(reshaped)
 
     # TODO: 全ての値を0.5加算する
     reshaped[:,:,0] += 0.5
@@ -405,7 +420,7 @@ def snapshots2Gray4(snapshots):
             for k in range(n):
                 # print(snapshot[j,0])
                 # print(arr[k+1])
-                if (snapshot[j,0] <= arr[k+1]) &( snapshot[j,0] >= arr[k]):
+                if ( arr[k] < snapshot[j,0]) & (snapshot[j,0] <= arr[k+1]):
                     histSequence[i,k] += snapshot[j,1]
                     break
                 else:
@@ -419,7 +434,7 @@ def snapshots2Gray4(snapshots):
         m = mean(histSequence[i,:])
         med = median(histSequence[i,:])
         sd = stdev(histSequence[i,:])
-        histSequence[i,:] = np.frompyfunc(reshape, 3, 1)(histSequence[i,:],med-sd,med+sd)
+        histSequence[i,:] = np.frompyfunc(change0within, 3, 1)(histSequence[i,:],med-1*sd,med+1*sd)
         s = histSequence[i,:].sum()
         histSequence[i,:] /= s
         # print(med-sd,med+sd)
@@ -477,26 +492,31 @@ if __name__ == '__main__':
     # plt.show()
 
     # n個の気配値からグラフを動画にして出力
-    # n = 100
-    # fig = plt.figure()
-    # ims = []
-    # l = getSnapshotsSize()
-    # for i in np.arange(l-n-1000,l-1000):
-    #     print(f'{i} in {l} snapshots')
-    #     snapshots = getSnapshotsBetween(i-100,i)
-    #     ssGray = snapshots2Gray(snapshots)
-    #     im = plt.imshow(ssGray, 'gray')
-    #     ims.append([im])
-    #
-    # ani = animation.ArtistAnimation(fig, ims, interval=100)
-    # ani.save('anim.mp4', writer="ffmpeg")
+    n = 500
+    fig = plt.figure()
+    ims = []
+    l = getSnapshotsSize()
+    for i in np.arange(l-n-100,l-100):
+        print(f'{(i-(l-n-100))/n*100}% finished')
+        snapshots = getSnapshotsBetween(i-100,i)
+        ssGray = snapshots2Gray4(snapshots)
+        im = plt.imshow(ssGray, 'gray')
+        ims.append([im])
+
+    ani = animation.ArtistAnimation(fig, ims, interval=100)
+    ani.save('anim.mp4', writer="ffmpeg")
 
     # snapshots = getSnapshotsBetween(1500,1600)
     # ssGray1 = snapshots2Gray(snapshots)
     # im = plt.imshow(ssGray1, 'gray')
     # plt.show()
 
-    snapshots = getSnapshotsBetween(1500,1600)
-    ssGray3 = snapshots2Gray3(snapshots)
-    im2 = plt.imshow(ssGray3, 'gray')
-    plt.show()
+    # n = 100
+    # fig = plt.figure()
+    # ims = []
+    # l = getSnapshotsSize()
+    # print(l,n)
+    # snapshots = getSnapshotsBetween(l-n-100-300,l-n-300)
+    # ssGray3 = snapshots2Gray4(snapshots)
+    # im2 = plt.imshow(ssGray3, 'gray')
+    # plt.show()

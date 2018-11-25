@@ -11,7 +11,7 @@ import visualizer as v
 # TODO: リストアップ
 def snapshot_list():
     p = Path("./log/snapshot/")
-    l = list(p.glob("*.csv"))
+    l = sorted(list(p.glob("*.csv")))
     # print(l)
     return l
 
@@ -49,7 +49,7 @@ def snapshots_traj(l):
 # TODO: n番目のスナップショットを取得
 def nth_snapshot(l,n):
     with open(l[n]) as file:
-        print(l[n])
+        # print(l[n])
         reader = csv.reader(file)
         # print(list(reader))
         lf = [row for row in list(reader) if row != []]
@@ -370,13 +370,134 @@ def createModel(datasSize, n_train, n_test):
             w = csv.writer(file)
             w.writerow([n, path, should_buy, should_sell])
 
+'''
+    # データから学習用データ・テスト用データを作る
+    ## ラベル設定
+    + 現在のbestBid,bestAskに対して利益の出るbestBid,bestAskがn分間以内に現れる
+    ## 入力
+    + datasSise: 1つのデータに用いる気配値の数量
+    + n_train:   学習用データの数量
+    + n_test:    テスト用データの数量
+    ## 出力: なし
+'''
+def createModel2(datasSize, n_train, n_test):
+    future_sample = 10
+    # 学習用データ
+    l = snapshot_list()
+    print(l)
+    n_min = len(l) - datasSize - future_sample - n_test -n_train -1
+    n_max = len(l) - datasSize - future_sample - n_test -1
+
+    timestamp = dt.now(timezone('UTC')).strftime('%Y%m%d%H%M')
+    os.makedirs(f'./model/2_{timestamp}/train/both', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/train/neither', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/train/should_buy', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/train/should_sell', exist_ok=True)
+
+
+    for n in range(n_min,n_max):
+        print(n)
+
+        # s = snapshots_10(l, n)
+        s = snapshots_between(l, n, n+datasSize)
+        t = snapshots_traj(s)
+
+        s_current = nth_snapshot(l, n + datasSize)     # 現在の気配値
+        s_future = np.zeros((600,2,future_sample))
+        for i in range(0,future_sample):
+            # print(f'i: {i}')
+            s_future[:,:,i]  = nth_snapshot(l, n + datasSize + i+1) # 1サンプル後までの気配値群
+            # print(s_future.shape)
+
+        max_sell = max(s_future[301,0,:])
+        min_buy  = max(s_future[300,0,:])
+        print(s_future[301,0,:])
+        print(s_future[300,0,:])
+        print(f'max sold prive: {max_sell}, min bought price: {min_buy}')
+        should_buy  = s_current[300][0] - max_sell < 0 # 将来できるだけ高く売れればよい
+        should_sell = s_current[301][0] - min_buy  > 0 # 将来できるだけ安く買えればよい
+        print(f'future_buy: {should_buy}, future_sell: {should_sell}')
+
+        det_class = 'neither'
+        if should_buy & should_sell:
+            det_class = 'both'
+        elif should_buy & (not should_sell):
+            det_class = 'should_buy'
+        elif should_sell & (not should_buy):
+            det_class = 'should_sell'
+        else:
+            det_class = 'neither'
+
+        path = f'./model/2_{timestamp}/train/{det_class}/model{n}.csv'
+        with open(path, 'w') as file:
+            w = csv.writer(file)
+            w.writerows(t)
+
+        with open(f'./model/2_{timestamp}/train/reference.csv', 'a') as file:
+            w = csv.writer(file)
+            w.writerow([n, path, should_buy, should_sell])
+
+    # テスト用データ
+    l = snapshot_list()
+    n_min = len(l) - datasSize - future_sample - n_train
+    n_max = len(l) - datasSize - future_sample
+
+    os.makedirs(f'./model/2_{timestamp}/test/both', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/test/neither', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/test/should_buy', exist_ok=True)
+    os.makedirs(f'./model/2_{timestamp}/test/should_sell', exist_ok=True)
+
+
+    for n in range(n_min,n_max):
+        print(n)
+
+        # s = snapshots_10(l, n)
+        s = snapshots_between(l, n, n+datasSize)
+        t = snapshots_traj(s)
+
+        s_current = nth_snapshot(l, n + datasSize)     # 現在の気配値
+        s_future = np.zeros((600,2,future_sample))
+        for i in range(0,future_sample):
+            # print(f'i: {i}')
+            s_future[:,:,i]  = nth_snapshot(l, n + datasSize + i+1) # 1サンプル後までの気配値群
+            # print(s_future.shape)
+
+        max_sell = max(s_future[301,0,:])
+        min_buy  = max(s_future[300,0,:])
+        print(s_future[301,0,:])
+        print(s_future[300,0,:])
+        print(f'max sold prive: {max_sell}, min bought price: {min_buy}')
+        should_buy  = s_current[300][0] - max_sell < 0 # 将来できるだけ高く売れればよい
+        should_sell = s_current[301][0] - min_buy  > 0 # 将来できるだけ安く買えればよい
+        print(f'future_buy: {should_buy}, future_sell: {should_sell}')
+
+        det_class = 'neither'
+        if should_buy & should_sell:
+            det_class = 'both'
+        elif should_buy & (not should_sell):
+            det_class = 'should_buy'
+        elif should_sell & (not should_buy):
+            det_class = 'should_sell'
+        else:
+            det_class = 'neither'
+
+        path = f'./model/2_{timestamp}/test/{det_class}/model{n}.csv'
+        with open(path, 'w') as file:
+            w = csv.writer(file)
+            w.writerows(t)
+
+        with open(f'./model/2_{timestamp}/test/reference.csv', 'a') as file:
+            w = csv.writer(file)
+            w.writerow([n, path, should_buy, should_sell])
+
 if __name__ == '__main__':
-    createModel(20, 3000, 1000)
+    # createModel(20, 3000, 1000)
+    createModel2(20, 1800, 100)
 
     # modelArr('201811011301')
     # loadModel('201811011301',20)
 
-    # datasArr_test, y_test, datasArr_train, y_train = loadDatas('201811011301')
+    # datasArr_test, y_test, datasArr_train, y_train = loadDatas('2_201811230049')
     # np.save('raw_test',datasArr_test)
     # np.save('raw_train',datasArr_train)
     # np.save('y_test',y_test)
