@@ -36,6 +36,14 @@ def loadDatas(timeData):
 
     return times, ids, sides, prices, sizes
 
+def csv2OHLC(filepath):
+    # https://kabuoji3.com/stock/7203/2018/
+    dfOHLC = pd.read_csv(filepath,encoding="SHIFT-JIS",header=1, usecols=[1,2,3,4])
+    dfVolume = pd.read_csv(filepath,encoding="SHIFT-JIS", header=1,usecols=[5])
+    # print(dataframeOHLC)
+    return np.array(dfOHLC), np.array(dfVolume)
+
+
 def data2OHLC(times, values, period, sizes):
     t0 = times[0]
     tf = times[len(times)-1]
@@ -121,10 +129,10 @@ def LowPassFiltered(values, timeConstant, dt):
         # print(value, filteredValue[i+1])
     return filteredValue
 
-def labelDealing(executions):
-    labels = np.zeros(len(executions)-1,dtype=float)
+def labelDealing(executions,future_sample):
+    labels = np.zeros(len(executions)-future_sample,dtype=float)
     for i,label in enumerate(labels):
-        if executions[i+1] > executions[i]: # 上昇
+        if executions[i+future_sample] > executions[i]: # 上昇
             labels[i] = 1
         else: # 下降
             labels[i] = 0
@@ -135,9 +143,9 @@ def filteredValues(OHLC, timeConstant, dt):
     values = LowPassFiltered(values, timeConstant, dt)
     return values
 
-def makeLabel(OHLC):
-    values = filteredValues(OHLC, 10, 1)
-    labels = labelDealing(values)
+def makeLabel(OHLC, timeConstant, dt):
+    values = filteredValues(OHLC, 1, 1)
+    labels = labelDealing(values,1)
     return labels
 
 def sma_n(value,n):
@@ -151,12 +159,12 @@ def sma_n(value,n):
 
 
 
-def inputRayer(OHLC, OHLC_Volumes):
+def inputRayer(OHLC, OHLC_Volumes, timeConstant, dt):
     """NNに与える入力の設計
     + 取引価格の変動率
     + 5秒間平均線の変動率
     + 25秒間平均線の変動率
-    + 取引量
+    # + 取引量
     + ゴールデンクロス判定
     + ボリンジャークロス判定
     """
@@ -169,7 +177,7 @@ def inputRayer(OHLC, OHLC_Volumes):
     OHLC_Volumes_n  = OHLC_Volumes[1:s[0]  ]
     OHLC_Volumes_n1 = OHLC_Volumes[0:s[0]-1]
 
-    price = filteredValues(OHLC, 10.0, 1.0)
+    price = filteredValues(OHLC, timeConstant, dt)
     price_n  = price[25:s[0]  ]
     price_n1 = price[24:s[0]-1]
     input[:,0] = np.frompyfunc(risingRateBetween,2,1)(price_n,price_n1)
@@ -198,36 +206,51 @@ def inputRayer(OHLC, OHLC_Volumes):
     input[:,5] = np.frompyfunc(alertBollingerCross,3,1)(upper,lower,price_n)
     return input
 
-def makeModelXY(data_id=2, label="", fig=False):
-    times, ids, sides, prices, sizes = loadDatas(data_id)
-    OHLC, OHLC_Times, t0, tf, period, OHLC_Volumes = data2OHLC(times, prices, 1, sizes)
+def makeModelXY(OHLC, OHLC_Volumes,data_id=2, label="", fig=False):
+    # times, ids, sides, prices, sizes = loadDatas(data_id)
+    # OHLC, OHLC_Times, t0, tf, period, OHLC_Volumes = data2OHLC(times, prices, 1, sizes)
 
-    labels = makeLabel(OHLC)
-    input = inputRayer(OHLC,OHLC_Volumes)
+    labels = makeLabel(OHLC, timeConstant=1, dt=1)
+    input = inputRayer(OHLC,OHLC_Volumes,timeConstant=1, dt=1)
 
-    x = input
+    x = input[0:input.shape[0]-1]
     y = labels[labels.shape[0]-x.shape[0]:labels.shape[0]]
 
     print(x.shape,y.shape)
     np.save(label + 'x.npy',x)
     np.save(label + 'y.npy',y)
 
+    real = filteredValues(OHLC, 1, 1)[labels.shape[0]-x.shape[0]:labels.shape[0]]
+    oh   = OHLC[labels.shape[0]-x.shape[0]:labels.shape[0],0]
     if fig:
         fig = plt.figure()
         plt.plot(x)
         plt.plot(y)
-        plt.legend(('price','sma5','sma25','volume','golden','bollingeer','y'))
+        plt.plot((real-real[0])/100)
+        plt.plot((oh-oh[0])/100)
+        plt.legend(('price rate','sma5 rate','sma25 rat','volume','golden','bollingeer','y','price (10sec LPF)', 'real price'))
+        plt.xlabel('time[s]')
         plt.show()
-
+#
     return x,y
 
+def OHLC_7203(firstYear, lastYear):
+    OHLC = np.empty((0,4),int)
+    dOHLC, dVolume = csv2OHLC('log/stock_7203/7203_' + str(2018) + '.csv')
+    Volume = np.empty((0),int)
+    for year in range(firstYear,lastYear):
+        dOHLC, dVolume = csv2OHLC('log/stock_7203/7203_' + str(year) + '.csv')
+        OHLC = np.vstack((OHLC,dOHLC))
+        Volume = np.append(Volume,dVolume)
+    print(OHLC.shape,Volume.shape)
+    return OHLC, Volume
 
 if __name__ == '__main__':
     # indiceCharts()
 
-    times, ids, sides, prices, sizes = loadDatas(2)
-    OHLC, OHLC_Times, t0, tf, period, OHLC_Volumes = data2OHLC(times, prices, 1, sizes)
-    prices = OHLC[:,0]
+    # times, ids, sides, prices, sizes = loadDatas(2)
+    # OHLC, OHLC_Times, t0, tf, period, OHLC_Volumes = data2OHLC(times, prices, 1, sizes)
+    # prices = OHLC[:,0]
 
     # sma5 = ta.SMA(prices, timeperiod=5)
     # sma25 = ta.SMA(prices, timeperiod=25)
@@ -244,5 +267,8 @@ if __name__ == '__main__':
     # print(f'{sum(bollingerCross)} points in {len(prices)} executions are the bollinger cross points')
     #
 
-    makeModelXY(data_id=2, label="test_", fig=False)
-    makeModelXY(data_id=1, label="train_", fig=False)
+    OHLC, OHLC_Volumes = OHLC_7203(2010,2018)
+    makeModelXY(OHLC, OHLC_Volumes,data_id=2, label="test_7203_", fig=True)
+
+    OHLC, OHLC_Volumes = OHLC_7203(2018,2019)
+    makeModelXY(OHLC, OHLC_Volumes,data_id=1, label="train_7203_", fig=False)
