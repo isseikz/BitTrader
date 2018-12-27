@@ -5,3 +5,7 @@ model/*
 __pycache__
 __pycache__/*
 anim.mp4
+*.npy
+*.h5
+*.png
+*.json
